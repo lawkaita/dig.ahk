@@ -10,6 +10,7 @@ class dig {
 
   __New(x?, forceAll := false) {
     this.stack := []
+    this.indent_modifier := 0
     this.result := this(x?, forceAll)
   }
 
@@ -246,7 +247,7 @@ class dig {
   getIndent() {
     str := ''
     i := 1
-    while (i < this.stack.length) {
+    while (i < this.stack.length + this.indent_modifier) {
       str .= '  '
       i++
     }
@@ -339,8 +340,11 @@ class dig {
     if type(parent) == 'Prototype'
       return dig.signature(x)
 
-    ; assumes enum arg count 2
-    return dig.signature(x) . ' -> ' . this(x(parent, 2))
+    this.indent_modifier--
+    ; assumes enum arg count is 2
+    result := dig.signature(x) . '`n' . this.getIndent()[2] . '``--> ' . this(x(parent, 2))
+    this.indent_modifier++
+    return result
   }
 
   openEnumerator(x) {
