@@ -3,8 +3,8 @@
 
 class dig {
 
-  static recurse___Enum := false
-  static recurse_VarRef := true
+  static recurse__Enum := false
+  static recurseVarRef := true
   static max_recurse := 100
   static openAll := []
 
@@ -330,7 +330,7 @@ class dig {
   ; Maybe Todo: enums of 1 arg?
   ; Maybe Todo: enums of more args than 2?
   open__Enum(x) {
-    if not dig.recurse___Enum
+    if not dig.recurse__Enum
       return dig.signature(x)
     if this.stack.length == 1
       return dig.signature(x)
@@ -421,11 +421,12 @@ class dig {
   }
 
   openVarRef(x) {
-    return dig.recurse_VarRef
+    return dig.recurseVarRef
       ? "VarRef ~> " . this(%x%)
       : "VarRef"
   }
 
+  ; order matters here.
   static spades := [
       dig.spade((x?) => (not IsSet(x)), 'unset')
     , dig.spade((x) => (Arrays.includes(dig.openAll, x)), (this, x) => (this.openAll(x)))
