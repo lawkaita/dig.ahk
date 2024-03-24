@@ -1,26 +1,46 @@
+#Requires AutoHotkey v2.0
+#Include <v2/Arrays/Arrays_Array>
+
 class dig {
 
+  static recurse___Enum := false
   static recurse_VarRef := true
   static max_recurse := 100
+  static openAll := []
 
-  __New(x?) {
+  __New(x?, forceAll := false) {
     this.stack := []
-    this.result := this(x?)
+    this.result := this(x?, forceAll)
   }
 
-  Call(x?) {
+  static dig(x?, forceAll := false) {
+    return this(x?, forceAll).result
+  }
+
+  Call(x?, forceAll := false) {
+    if this.stack.length > dig.max_recurse
+      return '<recursion exceeded> ' type(x)
+    if IsSet(x)
+      if this.stack.includes(x)
+        return '<self referred> ' . type(x)
     this.stack.push(x?)
-    idx := dig.spades.findIndex(fn => fn(x?))
-    if not idx
-      result :=  'give up'
-    blade := dig.spades[idx].blade
-    if blade.hasProp('Call')
-      if blade.minParams == 2
-        result := blade(this, x?)
-      else
-        result := blade(x?)
-    else
-      result := blade
+    if forceAll {
+      result := this.openAll(x?)
+    } else {
+      idx := dig.spades.findIndex(fn => fn(x?))
+      if not idx {
+        result :=  '<give up>'
+      } else {
+        blade := dig.spades[idx].blade
+        if blade.hasProp('Call')
+          if blade.minParams == 2
+            result := blade(this, x?)
+          else
+            result := blade(x?)
+        else
+          result := blade
+      }
+    }
 
     this.stack.pop()
     return result
@@ -104,7 +124,7 @@ class dig {
         if (x.hasOwnProp(step)) {
           desc := x.getOwnPropDesc(step)
           if desc.hasOwnProp('Get') {
-            x := dig.__descriptor(desc)
+            x := dig.__descriptor(desc, step)
             continue
           }
         }
@@ -116,33 +136,61 @@ class dig {
     return x
   }
 
+  static propEval(x, path) {
+    result := dig.propPathEval(x, path)
+    if not result is dig.__descriptor
+      return result
+    if result.desc.hasOwnProp('get')
+      if result.desc.get.minParams > 1  ; getter needs more args than just x as this
+        return result.desc.get
+    return x.%result.name%
+  }
+
+  ; deprecated
+  static propStrEval(str) {
+    x_and_path := StrSplit(str, '.', '', 2)
+    x_str := x_and_path[1]
+    x     := %x_str%  ; the function has no access to the value of %x_str%, it is not in its scope.
+    path  := x_and_path[2]
+    result := str . " := "
+      . dig.propEval(x, path)
+    return result
+  }
+
   ; private class
   class __descriptor {
-    __New(desc) {
+    __New(desc, name) {
       this.desc := desc
+      this.name := name
     }
   }
 
   static getNearestProps(x) {
-    return dig.getAllProps(x, true)
+    return dig.getAllProps(x, true, true)
   }
 
-  static getAllProps(x, nearest := false) {
+  static getAllProps(x, nearest := false, propEval := false) {
     prop_map := Map()
     paths := dig.propPathSearch(x, nearest)
     for path in paths {
       propname := StrSplit(path, '.')[-1]
-      result := dig.propPathEval(x,path)
-      if result is dig.__descriptor {
-        for n in ['Get', 'Set', 'Call'] {
-          if result.desc.hasOwnProp(n) {
-            prop_map[propname . '.' . n] := result.desc.%n%
-          }
-        }
-      } else {
+      if propEval {
+        result := dig.propEval(x,path)
         prop_map[propname] := result
+      } else {
+        result := dig.propPathEval(x,path)
+        if result is dig.__descriptor {
+          for n in ['Get', 'Set', 'Call'] {
+            if result.desc.hasOwnProp(n) {
+              prop_map[propname . '.' . n] := result.desc.%n%
+            }
+          }
+        } else {
+          prop_map[propname] := result
+        }
       }
     }
+    prop_map["base"] := x.base
     return prop_map
   }
 
@@ -187,7 +235,7 @@ class dig {
   class spade {
     __New(fn_handle, blade, args*) {
       this.fn_handle := fn_handle
-      this.blade  := blade
+      this.blade     := blade
     }
     Call(x?) {
       fn_handle := this.fn_handle
@@ -242,7 +290,7 @@ class dig {
   }
 
   openAll(x, nearest := false) {
-    prop_map := dig.getAllProps(x, nearest)
+    prop_map := dig.getAllProps(x, nearest, true)
     prop_arr := []
     for k, v in prop_map {
       prop_arr.push(k . ': ' . this(v))
@@ -258,15 +306,17 @@ class dig {
     return this.prettify(type_x, prop_arr, '{', '}')
   }
 
-  openMap(x) {
+  openMap(x, type_x := type(x)) {
     prop_arr := []
+    /*
     for n, v in dig.getNearestProps(x) {
       prop_arr.push(n . ': ' . this(v))
     }
+    */
     for n, v in x {
-      prop_arr.push(n . ' -> ' . this(v))
+      prop_arr.push(this(n) . ' -> ' . this(v))
     }
-    return this.prettify(type(x), prop_arr, '{', '}')
+    return this.prettify(type_x, prop_arr, '{', '}')
   }
 
   openArray(x) {
@@ -275,6 +325,26 @@ class dig {
       prop_arr.push(this(y?))
     }
     return this.prettify(type(x), prop_arr, '[', ']')
+  }
+
+  ; Maybe Todo: enums of 1 arg?
+  ; Maybe Todo: enums of more args than 2?
+  open__Enum(x) {
+    if not dig.recurse___Enum
+      return dig.signature(x)
+    if this.stack.length == 1
+      return dig.signature(x)
+
+    parent := this.stack[-2]
+    if type(parent) == 'Prototype'
+      return dig.signature(x)
+
+    ; assumes enum arg count 2
+    return dig.signature(x) . ' -> ' . this(x(parent, 2))
+  }
+
+  openEnumerator(x) {
+    return this.openMap(x, dig.signature(x))
   }
 
   openClass(x) {
@@ -300,6 +370,8 @@ class dig {
 
     if f.isVariadic
       args_str_arr.push('rest*')
+    if InStr(f.name, '.')
+      args_str_arr[1] := 'this'
     args_str := args_str_arr.join(', ')
     return Format('{}{} {}({})'
       , (f.isBuiltin ? 'built-in ' : '')
@@ -356,15 +428,17 @@ class dig {
 
   static spades := [
       dig.spade((x?) => (not IsSet(x)), 'unset')
+    , dig.spade((x) => (dig.openAll.includes(x)), (this, x) => (this.openAll(x)))
     , dig.spade((x) => (x is Number), (x) => (x))
     , dig.spade((x) => (x is String), (x) => (Format('"{}"', x)))
+    , dig.spade((x) => (x is Func and SubStr(x.name, -StrLen('.__Enum')) = '.__Enum' ), (this, x) => (this.open__Enum(x)))
+    , dig.spade((x) => (x is Enumerator),          (this, x) => (this.openEnumerator(x)))
     , dig.spade((x) => (x is Func),   (x) => (dig.signature(x)))
     , dig.spade((x) => (x is Array),  (this, x) => (this.openArray(x)))
     , dig.spade((x) => (x is VarRef), (this, x) => (this.openVarRef(x)))
-    , dig.spade((x) => (type(x) == 'Prototype')
-      , (this, x) => (this.openPrototype(x)))
+    , dig.spade((x) => (type(x) == 'Prototype'),   (this, x) => (this.openPrototype(x)))
     , dig.spade((x) => (x is Class),  (this, x) => (this.openClass(x)))
-    , dig.spade((x) => (type(x) == 'Object'), (this, x) => this.openObject(x))
+    , dig.spade((x) => (type(x) == 'Object'),      (this, x) => this.openObject(x))
     , dig.spade((x) => (x is Map),    (this, x) => (this.openMap(x)))
     , dig.spade((x) => (x is Object), (this, x) => (this.openNearest(x)))
   ]
