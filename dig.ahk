@@ -1,5 +1,5 @@
 #Requires AutoHotkey v2.0
-#Include <v2/Arrays/Arrays_Array>
+#Include <v2/Arrays/Arrays>
 
 class dig {
 
@@ -21,13 +21,13 @@ class dig {
     if this.stack.length > dig.max_recurse
       return '<recursion exceeded> ' type(x)
     if IsSet(x)
-      if this.stack.includes(x)
+      if Arrays.includes(this.stack, x)
         return '<self referred> ' . type(x)
     this.stack.push(x?)
     if forceAll {
       result := this.openAll(x?)
     } else {
-      idx := dig.spades.findIndex(fn => fn(x?))
+      idx := Arrays.findIndex(dig.spades, (fn => fn(x?)))
       if not idx {
         result :=  '<give up>'
       } else {
@@ -115,10 +115,10 @@ class dig {
     steps := StrSplit(path, '.')
 
     if not steps[1]
-      steps.shift()
+      Arrays.shift(steps)
 
     while steps.length {
-      step := steps.shift()
+      step := Arrays.shift(steps)
 
       if (x.hasProp('OwnProps')) {
         if (x.hasOwnProp(step)) {
@@ -219,13 +219,13 @@ class dig {
       arr := Arrays.fromEnumerator(x.ownprops())
     else
       arr := []
-    ts.shift()
+    Arrays.shift(ts)
     for t in ts {
       if ( isSet(t) 
         and t.hasProp('prototype')
         and t.prototype.hasProp('OwnProps')
       ) {
-        arr := arr.concat(Arrays.fromEnumerator(t.prototype.ownprops()))
+        arr := Arrays.concat(arr, Arrays.fromEnumerator(t.prototype.ownprops()))
         break
       }
     }
@@ -372,7 +372,7 @@ class dig {
       args_str_arr.push('rest*')
     if InStr(f.name, '.')
       args_str_arr[1] := 'this'
-    args_str := args_str_arr.join(', ')
+    args_str := Arrays.join(args_str_arr, ', ')
     return Format('{}{} {}({})'
       , (f.isBuiltin ? 'built-in ' : '')
       , type(f)
@@ -387,18 +387,18 @@ class dig {
     static unfold := (indent, type_x, props, po, pc) => (Format('{} {}`n{}`n{}'
         , type_x
         , po
-        , props.map(s => (indent[2] . s))
-            .join(',`n')
+        , Arrays.join(Arrays.map(props, (s => (indent[2] . s)))
+          , ',`n')
         , indent[1] . pc))
 
     indent := this.getIndent()
-    if props.findIndex((s) => (InStr(s, '`n')))
+    if Arrays.findIndex(props, (s) => (InStr(s, '`n')))
       return unfold(indent, type_x, props, po, pc)
 
     oneline := Format('{} {}{}{}'
       , type_x
       , po
-      , props.join(', ')
+      , Arrays.join(props, ', ')
       , pc)
 
     if StrLen(oneline) < 33
@@ -428,7 +428,7 @@ class dig {
 
   static spades := [
       dig.spade((x?) => (not IsSet(x)), 'unset')
-    , dig.spade((x) => (dig.openAll.includes(x)), (this, x) => (this.openAll(x)))
+    , dig.spade((x) => (Arrays.includes(dig.openAll, x)), (this, x) => (this.openAll(x)))
     , dig.spade((x) => (x is Number), (x) => (x))
     , dig.spade((x) => (x is String), (x) => (Format('"{}"', x)))
     , dig.spade((x) => (x is Func and SubStr(x.name, -StrLen('.__Enum')) = '.__Enum' ), (this, x) => (this.open__Enum(x)))
